@@ -1,0 +1,9 @@
+${PODS_ROOT}/Target Support Files/Pods-tomato-steward/Pods-tomato-steward-frameworks.sh
+${BUILT_PRODUCTS_DIR}/LDSwiftEventSource/LDSwiftEventSource.framework
+${BUILT_PRODUCTS_DIR}/LaunchDarkly/LaunchDarkly.framework
+${BUILT_PRODUCTS_DIR}/MDFInternationalization/MDFInternationalization.framework
+${BUILT_PRODUCTS_DIR}/MDFTextAccessibility/MDFTextAccessibility.framework
+${BUILT_PRODUCTS_DIR}/MaterialComponents/MaterialComponents.framework
+${BUILT_PRODUCTS_DIR}/MotionAnimator/MotionAnimator.framework
+${BUILT_PRODUCTS_DIR}/MotionInterchange/MotionInterchange.framework
+${BUILT_PRODUCTS_DIR}/lottie-ios/Lottie.framework
