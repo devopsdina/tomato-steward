@@ -2,7 +2,7 @@ platform :ios, '15.0'
 use_frameworks!
 
 target 'tomato-steward' do
-  pod 'LaunchDarkly', '~> 6.0'
+  pod 'LaunchDarkly', '~> 9.0'
   pod 'MaterialComponents', '~> 124'
   pod 'lottie-ios', '~> 4.5'
   # If UIKit is used instead of SwiftUI, SnapKit is allowed:

@@ -1,4 +1,5 @@
 ${PODS_ROOT}/Target Support Files/Pods-tomato-steward/Pods-tomato-steward-frameworks.sh
+${BUILT_PRODUCTS_DIR}/DataCompression/DataCompression.framework
 ${BUILT_PRODUCTS_DIR}/LDSwiftEventSource/LDSwiftEventSource.framework
 ${BUILT_PRODUCTS_DIR}/LaunchDarkly/LaunchDarkly.framework
 ${BUILT_PRODUCTS_DIR}/MDFInternationalization/MDFInternationalization.framework

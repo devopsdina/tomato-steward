@@ -1,9 +1,11 @@
 PODS:
-  - LaunchDarkly (6.2.0):
-    - LaunchDarkly/Core (= 6.2.0)
-  - LaunchDarkly/Core (6.2.0):
-    - LDSwiftEventSource (= 2.0.0)
-  - LDSwiftEventSource (2.0.0)
+  - DataCompression (3.8.0)
+  - LaunchDarkly (9.13.0):
+    - LaunchDarkly/Core (= 9.13.0)
+  - LaunchDarkly/Core (9.13.0):
+    - DataCompression (= 3.8.0)
+    - LDSwiftEventSource (= 3.3.0)
+  - LDSwiftEventSource (3.3.0)
   - lottie-ios (4.5.2)
   - MaterialComponents (124.2.0):
     - MaterialComponents/ActionSheet (= 124.2.0)
@@ -652,12 +654,13 @@ PODS:
   - MotionInterchange (3.0.0)
 
 DEPENDENCIES:
-  - LaunchDarkly (~> 6.0)
+  - LaunchDarkly (~> 9.0)
   - lottie-ios (~> 4.5)
   - MaterialComponents (~> 124)
 
 SPEC REPOS:
   trunk:
+    - DataCompression
     - LaunchDarkly
     - LDSwiftEventSource
     - lottie-ios
@@ -668,8 +671,9 @@ SPEC REPOS:
     - MotionInterchange
 
 SPEC CHECKSUMS:
-  LaunchDarkly: eca635897c64077b9df4f3ff056b94895382ac2e
-  LDSwiftEventSource: 8349e94042f398538fbf95d5e641eca98478d821
+  DataCompression: 630f9e7db6360b4d8929fb72fbd23689ca43bc16
+  LaunchDarkly: 1e1e0a1a8db191170400f8ab8fa411ffa69532d9
+  LDSwiftEventSource: b0826ca826ca890609a9833a05cae1f357fd3b99
   lottie-ios: 96784afc26ea031d3e2b6cae342a4b8915072489
   MaterialComponents: 1a9b2d9d45b1601ae544de85089adc4c464306d4
   MDFInternationalization: d697c55307816222a55685c4ccb1044ffb030c12
@@ -677,6 +681,6 @@ SPEC CHECKSUMS:
   MotionAnimator: 5f99d7c9592928c0f28a66283eda9c3b657dc480
   MotionInterchange: 13adae439b377e31d1674cc165539d50e1d1566a
 
-PODFILE CHECKSUM: 31b560f6e2efb029dc986a33a68fd33c71aac9f3
+PODFILE CHECKSUM: 94115cf39eadae4769fa418a711ae9c8666683ba
 
 COCOAPODS: 1.16.2

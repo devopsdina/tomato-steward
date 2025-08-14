@@ -17,7 +17,7 @@ struct HTTPHeaders {
     struct HeaderValue {
         static let apiKey = "api_key"
         static let applicationJson = "application/json"
-        static let eventSchema3 = "3"
+        static let eventSchema4 = "4"
     }
 
     private let mobileKey: String
@@ -30,11 +30,11 @@ struct HTTPHeaders {
     init(config: LDConfig, environmentReporter: EnvironmentReporting) {
         self.mobileKey = config.mobileKey
         self.additionalHeaders = config.additionalHeaders
-        self.userAgent = "\(environmentReporter.systemName)/\(environmentReporter.sdkVersion)"
+        self.userAgent = "\(SystemCapabilities.systemName)/\(ReportingConsts.sdkVersion)"
         self.authKey = "\(HeaderValue.apiKey) \(config.mobileKey)"
-        self.applicationTag = config.applicationInfo?.buildTag() ?? ""
+        self.applicationTag = environmentReporter.applicationInfo.buildTag()
 
-        if let wrapperName = config.wrapperName {
+      if let wrapperName = config.wrapperName {
             if let wrapperVersion = config.wrapperVersion {
                 wrapperHeaderVal = "\(wrapperName)/\(wrapperVersion)"
             } else {
@@ -67,7 +67,7 @@ struct HTTPHeaders {
         var headers = baseHeaders
         headers[HeaderKey.contentType] = HeaderValue.applicationJson
         headers[HeaderKey.accept] = HeaderValue.applicationJson
-        headers[HeaderKey.eventSchema] = HeaderValue.eventSchema3
+        headers[HeaderKey.eventSchema] = HeaderValue.eventSchema4
         return withAdditionalHeaders(headers)
     }
 

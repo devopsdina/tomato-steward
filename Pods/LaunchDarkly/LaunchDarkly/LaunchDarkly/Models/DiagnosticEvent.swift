@@ -20,13 +20,13 @@ struct DiagnosticInit: DiagnosticEvent, Encodable {
     let configuration: DiagnosticConfig
     let platform: DiagnosticPlatform
 
-    init(config: LDConfig, diagnosticId: DiagnosticId, creationDate: Int64) {
+    init(config: LDConfig, environmentReporting: EnvironmentReporting, diagnosticId: DiagnosticId, creationDate: Int64) {
         self.id = diagnosticId
         self.creationDate = creationDate
 
         self.sdk = DiagnosticSdk(config: config)
         self.configuration = DiagnosticConfig(config: config)
-        self.platform = DiagnosticPlatform(config: config)
+        self.platform = DiagnosticPlatform(environmentReporting: environmentReporting)
     }
 }
 
@@ -68,12 +68,12 @@ struct DiagnosticPlatform: Encodable {
     // Very general device model such as "iPad", "iPhone Simulator", or "Apple Watch"
     let deviceType: String
 
-    init(config: LDConfig) {
-        systemName = config.environmentReporter.operatingSystem.rawValue
-        systemVersion = config.environmentReporter.systemVersion
-        backgroundEnabled = config.environmentReporter.operatingSystem.isBackgroundEnabled
-        streamingEnabled = config.environmentReporter.operatingSystem.isStreamingEnabled
-        deviceType = config.environmentReporter.deviceType
+    init(environmentReporting: EnvironmentReporting) {
+        systemName = SystemCapabilities.operatingSystem.rawValue
+        systemVersion = environmentReporting.systemVersion
+        backgroundEnabled = SystemCapabilities.operatingSystem.isBackgroundEnabled
+        streamingEnabled = SystemCapabilities.operatingSystem.isStreamingEnabled
+        deviceType = environmentReporting.deviceModel
     }
 }
 
@@ -84,14 +84,13 @@ struct DiagnosticSdk: Encodable {
     let wrapperVersion: String?
 
     init(config: LDConfig) {
-        version = config.environmentReporter.sdkVersion
+        version = ReportingConsts.sdkVersion
         wrapperName = config.wrapperName
         wrapperVersion = config.wrapperVersion
     }
 }
 
 struct DiagnosticConfig: Codable {
-    let autoAliasingOptOut: Bool
     let customBaseURI: Bool
     let customEventsURI: Bool
     let customStreamURI: Bool
@@ -102,17 +101,15 @@ struct DiagnosticConfig: Codable {
     let allAttributesPrivate: Bool
     let pollingIntervalMillis: Int
     let backgroundPollingIntervalMillis: Int
-    let inlineUsersInEvents: Bool
     let useReport: Bool
     let backgroundPollingDisabled: Bool
     let evaluationReasonsRequested: Bool
-    let maxCachedUsers: Int
+    let maxCachedContexts: Int
     let mobileKeyCount: Int
     let diagnosticRecordingIntervalMillis: Int
     let customHeaders: Bool
 
     init(config: LDConfig) {
-        autoAliasingOptOut = config.autoAliasingOptOut
         customBaseURI = config.baseUrl != LDConfig.Defaults.baseUrl
         customEventsURI = config.eventsUrl != LDConfig.Defaults.eventsUrl
         customStreamURI = config.streamUrl != LDConfig.Defaults.streamUrl
@@ -120,15 +117,14 @@ struct DiagnosticConfig: Codable {
         connectTimeoutMillis = Int(exactly: round(config.connectionTimeout * 1_000)) ?? .max
         eventsFlushIntervalMillis = Int(exactly: round(config.eventFlushInterval * 1_000)) ?? .max
         streamingDisabled = config.streamingMode == .polling
-        allAttributesPrivate = config.allUserAttributesPrivate
+        allAttributesPrivate = config.allContextAttributesPrivate
         pollingIntervalMillis = Int(exactly: round(config.flagPollingInterval * 1_000)) ?? .max
         backgroundPollingIntervalMillis = Int(exactly: round(config.backgroundFlagPollingInterval * 1_000)) ?? .max
-        inlineUsersInEvents = config.inlineUserInEvents
         useReport = config.useReport
         backgroundPollingDisabled = !config.enableBackgroundUpdates
         evaluationReasonsRequested = config.evaluationReasons
         // While the SDK treats all negative values as unlimited, for consistency we only send -1 for diagnostics
-        maxCachedUsers = config.maxCachedUsers >= 0 ? config.maxCachedUsers : -1
+        maxCachedContexts = config.maxCachedContexts >= 0 ? config.maxCachedContexts : -1
         mobileKeyCount = 1 + (config.getSecondaryMobileKeys().count)
         diagnosticRecordingIntervalMillis = Int(exactly: round(config.diagnosticRecordingInterval * 1_000)) ?? .max
         customHeaders = !config.additionalHeaders.isEmpty || config.headerDelegate != nil

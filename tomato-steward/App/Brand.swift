@@ -12,6 +12,12 @@ extension Color {
         let b = Double(rgb & 0x0000FF) / 255.0
         self = Color(.sRGB, red: r, green: g, blue: b, opacity: alpha)
     }
+    
+    init(light: Color, dark: Color) {
+        self = Color(UIColor { traitCollection in
+            traitCollection.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light)
+        })
+    }
 }
 
 extension UIColor {
@@ -34,16 +40,25 @@ enum Brand {
     static let danger = Color(hex: "#e83b3b")       // red500
     static let warning = Color(hex: "#eec340")      // sYellow500
     static let success = Color(hex: "#00da7b")      // green500
-    static let surface = Color(hex: "#f8f8f8")      // gray01
-    static let surfaceStroke = Color(hex: "#d8e5ee") // border
-    static let title = Color(hex: "#282828")         // black100
-    static let body = Color(hex: "#414042")          // gray09
+    
+    // Adaptive colors that change based on appearance
+    static let surface = Color(light: Color(hex: "#f8f8f8"), dark: Color(hex: "#1c1c1e"))      // light: gray01, dark: dark gray
+    static let surfaceStroke = Color(light: Color(hex: "#d8e5ee"), dark: Color(hex: "#3a3a3c")) // light: border, dark: separator
+    static let title = Color(light: Color(hex: "#282828"), dark: Color(hex: "#ffffff"))         // light: black100, dark: white
+    static let body = Color(light: Color(hex: "#414042"), dark: Color(hex: "#ebebf5"))          // light: gray09, dark: secondaryLabel
 
-    // UIKit counterparts
+    // UIKit counterparts with adaptive colors
     static let uiPrimary = UIColor(hex: "#405bff")
     static let uiAccent = UIColor(hex: "#3dd6f5")
-    static let uiTitle = UIColor(hex: "#282828")
-    static let uiBody = UIColor(hex: "#414042")
+    static let uiSurface = UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark ? UIColor(hex: "#1c1c1e") : UIColor(hex: "#f8f8f8")
+    }
+    static let uiTitle = UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark ? UIColor.white : UIColor(hex: "#282828")
+    }
+    static let uiBody = UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark ? UIColor(hex: "#ebebf5") : UIColor(hex: "#414042")
+    }
 
     /// Apply global UIKit appearances to match the brand in SwiftUI containers.
     static func applyAppearance() {
@@ -66,6 +81,36 @@ enum Brand {
         // UISwitch (Toggle) brand color
         UISwitch.appearance().onTintColor = Brand.uiPrimary.withAlphaComponent(0.35)
         UISwitch.appearance().thumbTintColor = Brand.uiPrimary
+    }
+    
+    /// Apply dark mode theme to the app
+    static func enableDarkMode() {
+        DispatchQueue.main.async {
+            UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .forEach { $0.overrideUserInterfaceStyle = .dark }
+        }
+    }
+    
+    /// Apply light mode theme to the app  
+    static func enableLightMode() {
+        DispatchQueue.main.async {
+            UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .forEach { $0.overrideUserInterfaceStyle = .light }
+        }
+    }
+    
+    /// Return to system default theme
+    static func useSystemTheme() {
+        DispatchQueue.main.async {
+            UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .forEach { $0.overrideUserInterfaceStyle = .unspecified }
+        }
     }
 
     private static func makeNavGradientImage() -> UIImage? {

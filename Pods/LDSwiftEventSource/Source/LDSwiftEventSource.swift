@@ -1,7 +1,13 @@
 import Foundation
 
-#if os(Linux)
+#if os(Linux) || os(Windows)
 import FoundationNetworking
+#endif
+
+#if canImport(os)
+// os_log is not supported on some platforms, but we want to use it for most of our customer's
+// use cases that use Apple OSs
+import os.log
 #endif
 
 /**
@@ -51,12 +57,18 @@ public class EventSource {
         public var method: String = "GET"
         /// Optional HTTP body to be included in the API request.
         public var body: Data?
-        /// An initial value for the last-event-id header to be sent on the initial request
-        public var lastEventId: String = ""
         /// Additional HTTP headers to be set on the request
         public var headers: [String: String] = [:]
         /// Transform function to allow dynamically configuring the headers on each API request.
         public var headerTransform: HeaderTransform = { $0 }
+        /// An initial value for the last-event-id header to be sent on the initial request
+        public var lastEventId: String = ""
+        
+#if canImport(os)
+        /// Configure the logger that will be used.
+        public var logger: OSLog = OSLog(subsystem: "com.launchdarkly.swift-eventsource", category: "LDEventSource")
+#endif
+        
         /// The minimum amount of time to wait before reconnecting after a failure
         public var reconnectTime: TimeInterval = 1.0
         /// The maximum amount of time to wait before reconnecting after a failure
@@ -85,6 +97,14 @@ public class EventSource {
                 let sessionConfig = _urlSessionConfiguration.copy() as! URLSessionConfiguration
                 sessionConfig.httpAdditionalHeaders = ["Accept": "text/event-stream", "Cache-Control": "no-cache"]
                 sessionConfig.timeoutIntervalForRequest = idleTimeout
+
+                #if !os(Linux) && !os(Windows)
+                if #available(iOS 13, macOS 10.15, tvOS 13, watchOS 6, *) {
+                    sessionConfig.tlsMinimumSupportedProtocolVersion = .TLSv12
+                } else {
+                    sessionConfig.tlsMinimumSupportedProtocol = .tlsProtocol12
+                }
+                #endif
                 return sessionConfig
             }
             set {
@@ -96,9 +116,19 @@ public class EventSource {
         /**
          An error handler that is called when an error occurs and can shut down the client in response.
 
-         The default error handler will always attempt to reconnect on an error, unless `EventSource.stop()` is called.
+         The default error handler will always attempt to reconnect on an
+         error, unless `EventSource.stop()` is called or the error code is 204.
          */
-        public var connectionErrorHandler: ConnectionErrorHandler = { _ in .proceed }
+        public var connectionErrorHandler: ConnectionErrorHandler = { error in
+            guard let unsuccessfulResponseError = error as? UnsuccessfulResponseError
+            else { return .proceed }
+
+            let responseCode: Int = unsuccessfulResponseError.responseCode
+            if 204 == responseCode {
+                return .shutdown
+            }
+            return .proceed
+        }
 
         /// Create a new configuration with an `EventHandler` and a `URL`
         public init(handler: EventHandler, url: URL) {
@@ -134,8 +164,9 @@ class ReconnectionTimer {
 // MARK: EventSourceDelegate
 class EventSourceDelegate: NSObject, URLSessionDataDelegate {
     private let delegateQueue: DispatchQueue = DispatchQueue(label: "ESDelegateQueue")
-    private let logger = Logs()
-
+    
+    public var logger: InternalLogging
+    
     private let config: EventSource.Config
 
     private var readyState: ReadyState = .raw {
@@ -152,6 +183,14 @@ class EventSourceDelegate: NSObject, URLSessionDataDelegate {
 
     init(config: EventSource.Config) {
         self.config = config
+        
+#if canImport(os)
+        self.logger = OSLogAdapter(osLog: config.logger)
+#else
+        self.logger = NoOpLogging()
+#endif
+        
+        
         self.eventParser = EventParser(handler: config.handler,
                                        initialEventId: config.lastEventId,
                                        initialRetry: config.reconnectTime)
@@ -168,6 +207,7 @@ class EventSourceDelegate: NSObject, URLSessionDataDelegate {
                 self.logger.log(.info, "start() called on already-started EventSource object. Returning")
                 return
             }
+            self.readyState = .connecting
             self.urlSession = self.createSession()
             self.connect()
         }
@@ -258,7 +298,8 @@ class EventSourceDelegate: NSObject, URLSessionDataDelegate {
 
         readyState = .closed
         let sleep = reconnectionTimer.reconnectDelay(baseDelay: currentRetry)
-        logger.log(.info, "Waiting %.3f seconds before reconnecting...", sleep)
+        // this formatting shenanigans is to workaround String not implementing CVarArg on Swift<5.4 on Linux
+        logger.log(.info, "Waiting %@ seconds before reconnecting...", String(format: "%.3f", sleep))
         delegateQueue.asyncAfter(deadline: .now() + sleep) { [weak self] in
             self?.connect()
         }
@@ -279,14 +320,16 @@ class EventSourceDelegate: NSObject, URLSessionDataDelegate {
 
         // swiftlint:disable:next force_cast
         let httpResponse = response as! HTTPURLResponse
-        if (200..<300).contains(httpResponse.statusCode) {
+        let statusCode = httpResponse.statusCode
+        if (200..<300).contains(statusCode) && statusCode != 204 {
             reconnectionTimer.connectedTime = Date()
             readyState = .open
             config.handler.onOpened()
             completionHandler(.allow)
         } else {
-            logger.log(.info, "Unsuccessful response: %d", httpResponse.statusCode)
-            if dispatchError(error: UnsuccessfulResponseError(responseCode: httpResponse.statusCode)) == .shutdown {
+            // this formatting shenanigans is to workaround String not implementing CVarArg on Swift<5.4 on Linux
+            logger.log(.info, "Unsuccessful response: %@", String(format: "%d", statusCode))
+            if dispatchError(error: UnsuccessfulResponseError(responseCode: statusCode)) == .shutdown {
                 logger.log(.info, "Connection has been explicitly shut down by error handler")
                 readyState = .shutdown
             }

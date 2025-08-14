@@ -1,6 +1,6 @@
 # LDSwiftEventSource
 
-[![CircleCI](https://circleci.com/gh/launchdarkly/swift-eventsource.svg?style=shield)](https://circleci.com/gh/launchdarkly/swift-eventsource)
+[![Run CI](https://github.com/launchdarkly/swift-eventsource/actions/workflows/ci.yml/badge.svg)](https://github.com/launchdarkly/swift-eventsource/actions/workflows/ci.yml)
 [![CocoaPods](https://img.shields.io/cocoapods/v/LDSwiftEventSource.svg)](https://cocoapods.org/pods/LDSwiftEventSource)
 [![Carthage compatible](https://img.shields.io/badge/Carthage-compatible-4BC51D.svg?style=flat)](https://github.com/Carthage/Carthage)
 [![SwiftPM compatible](https://img.shields.io/badge/SwiftPM-compatible-4BC51D.svg?style=flat)](https://swift.org/package-manager/)
@@ -9,7 +9,7 @@
 LDSwiftEventSource is a cross platform implementation of the [EventSource specification](https://html.spec.whatwg.org/multipage/server-sent-events.html) written in Swift. It was developed for use in the [LaunchDarkly iOS SDK](https://github.com/launchdarkly/ios-client-sdk). Generated API docs are available on [GitHub Pages](https://launchdarkly.github.io/swift-eventsource/).
 
 ## Requirements
-- iOS 10.0+ / watchOS 3.0+ / tvOS 10.0+ / macOS 10.12+
+- iOS 11.0+ / watchOS 4.0+ / tvOS 11.0+ / macOS 10.13+
 - Swift 5.1+
 
 ## Installation
@@ -19,7 +19,7 @@ LDSwiftEventSource is a cross platform implementation of the [EventSource specif
 To use the [CocoaPods](https://cocoapods.org) dependency manager to integrate LDSwiftEventSource into your Xcode project, specify it in your `Podfile`:
 
 ```ruby
-pod 'LDSwiftEventSource', '~> 2.0'
+pod 'LDSwiftEventSource', '~> 3.3'
 ```
 
 ### Carthage
@@ -27,7 +27,7 @@ pod 'LDSwiftEventSource', '~> 2.0'
 To use the [Carthage](https://github.com/Carthage/Carthage) dependency manager to integrate LDSwiftEventSource into your Xcode project, specify it in your `Cartfile`:
 
 ```ogdl
-github "LaunchDarkly/swift-eventsource" ~> 2.0
+github "LaunchDarkly/swift-eventsource" ~> 3.3
 ```
 
 ### Swift Package Manager
@@ -38,11 +38,13 @@ To integrate LDSwiftEventSource into an Xcode project, go to the project editor,
 
 To include LDSwiftEventSource in a Swift package, simply add it to the dependencies section of your `Package.swift` file. And add the desired product as a dependency for your targets.
 
+<!-- x-release-please-start-version -->
 ```swift
 dependencies: [
-    .package(url: "https://github.com/LaunchDarkly/swift-eventsource.git", .upToNextMajor(from: "2.0.0"))
+    .package(url: "https://github.com/LaunchDarkly/swift-eventsource.git", .upToNextMajor(from: "3.3.0"))
 ]
 ```
+<!-- x-release-please-end -->
 
 ## Contributing
 
