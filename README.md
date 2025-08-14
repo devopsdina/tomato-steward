@@ -30,11 +30,12 @@ open TomatoSteward.xcworkspace
 4) Build the app in xCode and use the simulator.  Logging is set to show the default values of the feature flags.
 
 ## Feature Flags (keys and defaults)
-- `algo.reductionModel` (string) — default "v1"; "v2" enables alternate formula
+- `algo.reductionModel` (string) — default "v1"; "v2" enables alternate formula. Located in the `Services.LaunchDarklyService.swift`
 - `ui.showAdvancedTips` (bool) — default false
 - `ui.enableLogin` (bool) — default false
 - `units.defaultCelsius` (bool) — default false
-- `ui.theme` (bool) — default false (light mode)
+- `ui.showUnitsToggle` (bool) — default false
+- `ui.DarkMode` (bool) — default false (light mode)
 
 ## Algorithm Summary
 Baseline (v1): time = 30 * (weight_oz / 28)^0.85 * varietalFactor * styleFactor
@@ -47,3 +48,5 @@ Clamp 20…120 minutes. If time < 35 → Low Simmer (≈185–200°F / 85–93°
 - `lastInputs` (JSON-encoded `StewInputs`)
 - `preferredUnits` ("F"/"C")
 
+## Notes
+- We are using the SwiftUI App lifecycle, our main entry point is `App/TomatoStewardApp.swift`.  This file handles app initialization & global configuration. Other iOS repos may have `AppDelegate.swift` as their main entry if they are using the traditional UIKit approach.

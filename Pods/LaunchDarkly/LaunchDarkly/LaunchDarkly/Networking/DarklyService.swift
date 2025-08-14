@@ -1,7 +1,9 @@
 import Foundation
 import LDSwiftEventSource
+import OSLog
+import DataCompression
 
-typealias ServiceResponse = (data: Data?, urlResponse: URLResponse?, error: Error?)
+typealias ServiceResponse = (data: Data?, urlResponse: URLResponse?, error: Error?, etag: String?)
 typealias ServiceCompletionHandler = (ServiceResponse) -> Void
 
 // sourcery: autoMockable
@@ -14,11 +16,11 @@ extension EventSource: DarklyStreamingProvider {}
 
 protocol DarklyServiceProvider: AnyObject {
     var config: LDConfig { get }
-    var user: LDUser { get set }
+    var context: LDContext { get set }
     var diagnosticCache: DiagnosticCaching? { get }
 
     func getFeatureFlags(useReport: Bool, completion: ServiceCompletionHandler?)
-    func clearFlagResponseCache()
+    func resetFlagResponseCache(etag: String?)
     func createEventSource(useReport: Bool, handler: EventHandler, errorHandler: ConnectionErrorHandler?) -> DarklyStreamingProvider
     func publishEventData(_ eventData: Data, _ payloadId: String, completion: ServiceCompletionHandler?)
     func publishDiagnostic<T: DiagnosticEvent & Encodable>(diagnosticEvent: T, completion: ServiceCompletionHandler?)
@@ -32,8 +34,8 @@ final class DarklyService: DarklyServiceProvider {
     }
 
     struct FlagRequestPath {
-        static let get = "msdk/evalx/users"
-        static let report = "msdk/evalx/user"
+        static let get = "msdk/evalx/contexts"
+        static let report = "msdk/evalx/context"
     }
 
     struct StreamRequestPath {
@@ -46,27 +48,34 @@ final class DarklyService: DarklyServiceProvider {
     }
 
     let config: LDConfig
-    var user: LDUser
+    var context: LDContext
     let httpHeaders: HTTPHeaders
     let diagnosticCache: DiagnosticCaching?
-    private (set) var serviceFactory: ClientServiceCreating
+    private(set) var serviceFactory: ClientServiceCreating
     private var session: URLSession
     var flagRequestEtag: String?
 
-    init(config: LDConfig, user: LDUser, serviceFactory: ClientServiceCreating) {
+  init(config: LDConfig, context: LDContext, envReporter: EnvironmentReporting, serviceFactory: ClientServiceCreating) {
         self.config = config
-        self.user = user
+        self.context = context
         self.serviceFactory = serviceFactory
 
-        if !config.mobileKey.isEmpty && !config.diagnosticOptOut {
+        if !config.mobileKey.isEmpty && !config.diagnosticOptOut && config.sendEvents {
             self.diagnosticCache = serviceFactory.makeDiagnosticCache(sdkKey: config.mobileKey)
         } else {
             self.diagnosticCache = nil
         }
 
-        self.httpHeaders = HTTPHeaders(config: config, environmentReporter: serviceFactory.makeEnvironmentReporter())
+        self.httpHeaders = HTTPHeaders(config: config, environmentReporter: envReporter)
         // URLSessionConfiguration is a class, but `.default` creates a new instance. This does not effect other session configuration.
         let sessionConfig = URLSessionConfiguration.default
+
+        if #available(iOS 13, macOS 10.15, tvOS 13, watchOS 6, *) {
+            sessionConfig.tlsMinimumSupportedProtocolVersion = .TLSv12
+        } else {
+            sessionConfig.tlsMinimumSupportedProtocol = .tlsProtocol12
+        }
+
         // We always revalidate the cache which we handle manually
         sessionConfig.requestCachePolicy = .reloadIgnoringLocalCacheData
         sessionConfig.urlCache = nil
@@ -75,17 +84,20 @@ final class DarklyService: DarklyServiceProvider {
 
     // MARK: Feature Flags
 
-    func clearFlagResponseCache() {
-        flagRequestEtag = nil
+    func resetFlagResponseCache(etag: String?) {
+        flagRequestEtag = etag
     }
 
     func getFeatureFlags(useReport: Bool, completion: ServiceCompletionHandler?) {
         guard hasMobileKey(#function) else { return }
         let encoder = JSONEncoder()
-        encoder.userInfo[LDUser.UserInfoKeys.includePrivateAttributes] = true
-        guard let userJsonData = try? encoder.encode(user)
+        encoder.userInfo[LDContext.UserInfoKeys.includePrivateAttributes] = true
+        encoder.userInfo[LDContext.UserInfoKeys.redactAttributes] = false
+        encoder.outputFormatting = [.sortedKeys]
+
+        guard let contextJsonData = try? encoder.encode(context)
         else {
-            Log.debug(typeName(and: #function, appending: ": ") + "Aborting. Unable to create flagRequest.")
+            os_log("%s Aborting. Unable to create flag request.", log: config.logger, type: .debug, typeName(and: #function))
             return
         }
 
@@ -93,18 +105,18 @@ final class DarklyService: DarklyServiceProvider {
         if let etag = flagRequestEtag {
             headers.merge([HTTPHeaders.HeaderKey.ifNoneMatch: etag]) { orig, _ in orig }
         }
-        var request = URLRequest(url: flagRequestUrl(useReport: useReport, getData: userJsonData),
+        var request = URLRequest(url: flagRequestUrl(useReport: useReport, getData: contextJsonData),
                                  ldHeaders: headers,
                                  ldConfig: config)
         if useReport {
             request.httpMethod = URLRequest.HTTPMethods.report
-            request.httpBody = userJsonData
+            request.httpBody = contextJsonData
         }
 
         self.session.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {
-                self?.processEtag(from: (data, response, error))
-                completion?((data, response, error))
+                self?.processEtag(from: (data: data, urlResponse: response, error: error, etag: self?.flagRequestEtag))
+                completion?((data: data, urlResponse: response, error: error, etag: self?.flagRequestEtag))
             }
         }.resume()
     }
@@ -131,8 +143,8 @@ final class DarklyService: DarklyServiceProvider {
 
     private func processEtag(from serviceResponse: ServiceResponse) {
         guard serviceResponse.error == nil,
-            serviceResponse.urlResponse?.httpStatusCode == HTTPURLResponse.StatusCodes.ok,
-            serviceResponse.data?.jsonDictionary != nil
+              serviceResponse.urlResponse?.httpStatusCode == HTTPURLResponse.StatusCodes.ok,
+              serviceResponse.data?.jsonDictionary != nil
         else {
             if serviceResponse.urlResponse?.httpStatusCode != HTTPURLResponse.StatusCodes.notModified {
                 flagRequestEtag = nil
@@ -144,12 +156,15 @@ final class DarklyService: DarklyServiceProvider {
 
     // MARK: Streaming
 
-    func createEventSource(useReport: Bool, 
-                           handler: EventHandler, 
+    func createEventSource(useReport: Bool,
+                           handler: EventHandler,
                            errorHandler: ConnectionErrorHandler?) -> DarklyStreamingProvider {
         let encoder = JSONEncoder()
-        encoder.userInfo[LDUser.UserInfoKeys.includePrivateAttributes] = true
-        let userJsonData = try? encoder.encode(user)
+        encoder.userInfo[LDContext.UserInfoKeys.includePrivateAttributes] = true
+        encoder.userInfo[LDContext.UserInfoKeys.redactAttributes] = false
+        encoder.outputFormatting = [.sortedKeys]
+
+        let contextJsonData = try? encoder.encode(context)
 
         var streamRequestUrl = config.streamUrl.appendingPathComponent(StreamRequestPath.meval)
         var connectMethod = HTTPRequestMethod.get
@@ -157,9 +172,9 @@ final class DarklyService: DarklyServiceProvider {
 
         if useReport {
             connectMethod = HTTPRequestMethod.report
-            connectBody = userJsonData
+            connectBody = contextJsonData
         } else {
-            streamRequestUrl.appendPathComponent(userJsonData?.base64UrlEncodedString ?? "", isDirectory: false)
+            streamRequestUrl.appendPathComponent(contextJsonData?.base64UrlEncodedString ?? "", isDirectory: false)
         }
 
         return serviceFactory.makeStreamingProvider(url: shouldGetReasons(url: streamRequestUrl),
@@ -190,18 +205,28 @@ final class DarklyService: DarklyServiceProvider {
     }
 
     private func doPublish(url: URL, headers: [String: String], body: Data, completion: ServiceCompletionHandler?) {
+        var headers = headers
+
+        var httpBody = body
+        if config.enableCompression {
+            if let compressed = body.gzip() {
+                httpBody = compressed
+                headers.updateValue("gzip", forKey: "Content-Encoding")
+            }
+        }
+
         var request = URLRequest(url: url, ldHeaders: headers, ldConfig: config)
         request.httpMethod = URLRequest.HTTPMethods.post
-        request.httpBody = body
+        request.httpBody = httpBody
 
         session.dataTask(with: request) { data, response, error in
-            completion?((data, response, error))
+            completion?((data: data, urlResponse: response, error: error, etag: nil))
         }.resume()
     }
 
     private func hasMobileKey(_ location: String) -> Bool {
         if config.mobileKey.isEmpty {
-            Log.debug(typeName(and: location, appending: ": ") + "Aborting. No mobile key.")
+            os_log("%s Aborting. No mobile key.", log: config.logger, type: .debug, typeName(and: #function))
         }
         return !config.mobileKey.isEmpty
     }

@@ -1,10 +1,11 @@
 import Foundation
+import OSLog
 
 /// Defines the connection modes the SDK may be configured to use to retrieve feature flag data from LaunchDarkly.
 public enum LDStreamingMode {
     /**
      In streaming mode, the SDK uses a streaming connection to receive feature flag data from LaunchDarkly. When a flag
-     is updated in the dashboard, the stream notifies the SDK of changes to the evaluation result for the current user.
+     is updated in the dashboard, the stream notifies the SDK of changes to the evaluation result for the current context.
 
      Streaming mode is not available on watchOS. On iOS and tvOS, the client app must be running in the foreground to
      use a streaming connection. If streaming mode is not available, the SDK reverts to polling mode.
@@ -18,12 +19,32 @@ public enum LDStreamingMode {
     case polling
 }
 
+/**
+ Enable / disable options for Auto Environment Attributes functionality. When enabled, the SDK will automatically
+ provide data about the mobile environment where the application is running. This data makes it simpler to target
+ your mobile customers based on application name or version, or on device characteristics including manufacturer,
+ model, operating system, locale, and so on. We recommend enabling this when you configure the SDK. To learn more,
+ read [Automatic environment attributes](https://docs.launchdarkly.com/sdk/features/environment-attributes).
+
+ For example, consider a “dark mode” feature being added to an app. Versions 10 through 14 contain early,
+ incomplete versions of the feature. These versions are available to all customers, but the “dark mode” feature is only
+ enabled for testers.  With version 15, the feature is considered complete. With Auto Environment Attributes enabled,
+ you can use targeting rules to enable "dark mode" for all customers who are using version 15 or greater, and ensure
+ that customers on previous versions don't use the earlier, unfinished version of the feature.
+ */
+@objc public enum AutoEnvAttributes: Int {
+    /// Enables the Auto EnvironmentAttributes functionality.
+    case enabled
+    /// Disables the Auto EnvironmentAttributes functionality.
+    case disabled
+}
+
 typealias MobileKey = String
 
 /**
  A callback for dynamically setting http headers when connection & reconnecting to a stream
- or on every poll request. This function should return a copy of the headers recieved with
- any modifications or additions needed. Removing headers is discouraged as it may cause 
+ or on every poll request. This function should return a copy of the headers received with
+ any modifications or additions needed. Removing headers is discouraged as it may cause
  requests to fail.
 
  - parameter url: The endpoint that is being connected to
@@ -35,28 +56,35 @@ public typealias RequestHeaderTransform = (_ url: URL, _ headers: [String: Strin
 /// Defines application metadata.
 ///
 /// These properties are optional and informational. They may be used in LaunchDarkly
-/// analytics or other product features, but they do not affect feature flag evaluations.
+/// analytics or other product features.
 public struct ApplicationInfo: Equatable {
-    private var applicationId: String
-    private var applicationVersion: String
+    internal var applicationId: String?
+    internal var applicationName: String?
+    internal var applicationVersion: String?
+    internal var applicationVersionName: String?
 
-    public init() {
-        applicationId = ""
-        applicationVersion = ""
-    }
+    public init() {}
 
     /// A unique identifier representing the application where the LaunchDarkly SDK is running.
     ///
     /// This can be specified as any string value as long as it only uses the following characters:
     /// ASCII letters, ASCII digits, period, hyphen, underscore. A string containing any other
     /// characters will be ignored.
-    public mutating func applicationIdentifier(_ applicationId: String) {
-        if let error = validate(applicationId) {
-            Log.debug("applicationIdentifier \(error)")
-            return
+    public mutating func applicationIdentifier(_ applicationId: String?) {
+        validateThenCall(inputName: "applicationId", input: applicationId) {
+            self.applicationId = $0
         }
+    }
 
-        self.applicationId = applicationId
+    /// A human-friendly application name representing the application where the LaunchDarkly SDK is running.
+    ///
+    /// This can be specified as any string value as long as it only uses the following characters:
+    /// ASCII letters, ASCII digits, period, hyphen, underscore. A string containing any other
+    /// characters will be ignored.
+    public mutating func applicationName(_ applicationName: String?) {
+        validateThenCall(inputName: "applicationName", input: applicationName) {
+            self.applicationName = $0
+        }
     }
 
     /// A unique identifier representing the version of the application where the LaunchDarkly SDK
@@ -65,37 +93,81 @@ public struct ApplicationInfo: Equatable {
     /// This can be specified as any string value as long as it only uses the following characters:
     /// ASCII letters, ASCII digits, period, hyphen, underscore. A string containing any other
     /// characters will be ignored.
-    public mutating func applicationVersion(_ applicationVersion: String) {
-        if let error = validate(applicationVersion) {
-            Log.debug("applicationVersion \(error)")
-            return
+    public mutating func applicationVersion(_ applicationVersion: String?) {
+        validateThenCall(inputName: "applicationVersion", input: applicationVersion) {
+            self.applicationVersion = $0
         }
+    }
 
-        self.applicationVersion = applicationVersion
+    /// A human-friendly name representing the version of the application where the LaunchDarkly SDK
+    /// is running.
+    ///
+    /// This can be specified as any string value as long as it only uses the following characters:
+    /// ASCII letters, ASCII digits, period, hyphen, underscore. A string containing any other
+    /// characters will be ignored.
+    public mutating func applicationVersionName(_ applicationVersionName: String?) {
+        validateThenCall(inputName: "applicationVersionName", input: applicationVersionName) {
+            self.applicationVersionName = $0
+        }
     }
 
     func buildTag() -> String {
         var tags: [String] = []
 
-        if !applicationId.isEmpty {
+        if let applicationId = applicationId {
             tags.append("application-id/\(applicationId)")
         }
 
-        if !applicationVersion.isEmpty {
+        if let applicationName = applicationName {
+            tags.append("application-name/\(applicationName)")
+        }
+
+        if let applicationVersion = applicationVersion {
             tags.append("application-version/\(applicationVersion)")
+        }
+
+        if let applicationVersionName = applicationVersionName {
+            tags.append("application-version-name/\(applicationVersionName)")
         }
 
         return tags.lazy.joined(separator: " ")
     }
 
-    private func validate(_ value: String) -> String? {
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
-        if value.rangeOfCharacter(from: allowed.inverted) != nil {
-            return "contained invalid characters"
+    /**
+     If after sanitization the input is valid, invokes the closure with the sanitized input.  A null input is valid to permit nilling
+     out a property.  Otherwise does not invoke the closure.
+     */
+    private func validateThenCall(inputName: String, input: String?, onSuccess: (String?) -> Void) {
+        // nil input is permitted to clear the property
+        guard let unwrapped = input else {
+            onSuccess(input)
+            return
         }
 
-        if value.count > 64 {
+        let sanitized = unwrapped.replacingOccurrences(of: " ", with: "-")
+        if validate(sanitized) != nil {
+            return
+        }
+
+        onSuccess(sanitized)
+    }
+
+    /**
+     Validates the provided string.
+     - returns: nil if valid, otherwise string describing issue
+     */
+    private func validate(_ input: String) -> String? {
+        if input.isEmpty {
+            return "empty string and was discarded"
+        }
+
+        if input.count > 64 {
             return "longer than 64 characters and was discarded"
+        }
+
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+        if input.rangeOfCharacter(from: allowed.inverted) != nil {
+            return "contained invalid characters"
         }
 
         return nil
@@ -115,7 +187,10 @@ public struct LDConfig {
         static let eventsUrl = URL(string: "https://mobile.launchdarkly.com")!
         /// The default base url for connecting to streaming service
         static let streamUrl = URL(string: "https://clientstream.launchdarkly.com")!
-        
+
+        /// The default behavior for the SDK is to send events.
+        static let sendEvents = true
+
         /// The default maximum number of events the LDClient can store
         static let eventCapacity = 100
 
@@ -135,25 +210,22 @@ public struct LDConfig {
         /// The default mode to set LDClient online on a start call. (true)
         static let startOnline = true
 
-        /// The default setting for private user attributes. (false)
-        static let allUserAttributesPrivate = false
-        /// The default private user attribute list (nil)
-        static let privateUserAttributes: [UserAttribute] = []
+        /// The default setting for private context attributes. (false)
+        static let allContextAttributesPrivate = false
+        /// The default private context attribute list (nil)
+        static let privateContextAttributes: [Reference] = []
 
         /// The default HTTP request method for stream connections and feature flag requests. When true, these requests will use the non-standard verb `REPORT`. When false, these requests will use the standard verb `GET`. (false)
         static let useReport = false
 
-        /// The default setting controlling the amount of user data sent in events. When true the SDK will generate events using the full LDUser, excluding private attributes. When false the SDK will generate events using only the LDUser.key. (false)
-        static let inlineUserInEvents = false
-
         /// The default setting controlling information logged to the console, and modifying some setting ranges to facilitate debugging. (false)
         static let debugMode = false
-        
+
         /// The default setting for whether we request evaluation reasons for all flags. (false)
         static let evaluationReasons = false
 
-        /// The default setting for the maximum number of locally cached users. (5)
-        static let maxCachedUsers = 5
+        /// The default setting for the maximum number of locally cached contexts. (5)
+        static let maxCachedContexts = 5
 
         /// The default setting for whether sending diagnostic data is disabled. (false)
         static let diagnosticOptOut = false
@@ -175,9 +247,17 @@ public struct LDConfig {
 
         /// a closure to allow dynamic changes of headers on connect & reconnect
         static let headerDelegate: RequestHeaderTransform? = nil
-    
-        /// should anonymous users automatically be aliased when identifying
-        static let autoAliasingOptOut: Bool = false
+
+        /// The default behavior for environment attributes is to not modify any provided context UNLESS the developer specifically opts-in.
+        static let autoEnvAttributes: Bool = false
+
+        static let hooks: [Hook] = []
+
+        /// The default logger for the SDK. Can be overridden to provide customization.
+        static let logger: OSLog = OSLog(subsystem: "com.launchdarkly", category: "ios-client-sdk")
+
+        /// The default behavior for event payload compression.
+        static let enableCompression: Bool = false
     }
 
     /// Constants relevant to setting up an `LDConfig`
@@ -210,8 +290,8 @@ public struct LDConfig {
         /// The minimum time interval between sending periodic diagnostic data. (5 minutes)
         public let diagnosticRecordingInterval: TimeInterval
 
-        init(environmentReporter: EnvironmentReporting = EnvironmentReporter()) {
-            let isDebug = environmentReporter.isDebugBuild
+        init(isDebugBuild: Bool = false) {
+            let isDebug = isDebugBuild
             self.flagPollingInterval = isDebug ? Debug.flagPollingInterval : Production.flagPollingInterval
             self.backgroundFlagPollingInterval = isDebug ? Debug.backgroundFlagPollingInterval : Production.backgroundFlagPollingInterval
             self.diagnosticRecordingInterval = isDebug ? Debug.diagnosticRecordingInterval : Production.diagnosticRecordingInterval
@@ -227,6 +307,10 @@ public struct LDConfig {
     public var eventsUrl: URL = Defaults.eventsUrl
     /// The base url for connecting to the streaming service. Do not change unless instructed by LaunchDarkly.
     public var streamUrl: URL = Defaults.streamUrl
+
+    /// Whether to send events back to LaunchDarkly. This differs from {#offline?} in that it affects
+    /// only the sending of client-side events, not streaming or polling for events from the server.
+    public var sendEvents: Bool = Defaults.sendEvents
 
     /// The maximum number of analytics events the LDClient can store. When the LDClient event store reaches the eventCapacity, the SDK discards events until it successfully reports them to LaunchDarkly. (Default: 100)
     public var eventCapacity: Int = Defaults.eventCapacity
@@ -262,30 +346,30 @@ public struct LDConfig {
         }
     }
     private var allowBackgroundUpdates: Bool
-    
+
     /// Controls LDClient start behavior. When true, calling start causes LDClient to go online. When false, calling start causes LDClient to remain offline. If offline at start, set the client online to receive flag updates. (Default: true)
     public var startOnline: Bool = Defaults.startOnline
 
     /**
-     Treat all user attributes as private for event reporting for all users.
+     Treat all context attributes as private for event reporting for all contexts.
 
      The SDK will not include private attribute values in analytics events, but private attribute names will be sent.
 
-     When true, ignores values in either LDConfig.privateUserAttributes or LDUser.privateAttributes. (Default: false)
+     When true, ignores values in either LDConfig.privateContextAttributes or LDContext.privateAttributes. (Default: false)
 
-     See Also: `privateUserAttributes` and `LDUser.privateAttributes`
+     See Also: `privateContextAttributes` and `LDContext.privateAttributes`
     */
-    public var allUserAttributesPrivate: Bool = Defaults.allUserAttributesPrivate
+    public var allContextAttributesPrivate: Bool = Defaults.allContextAttributesPrivate
     /**
-     User attributes and top level custom dictionary keys to treat as private for event reporting for all users.
+     Context attributes and top level custom dictionary keys to treat as private for event reporting for all contexts.
 
      The SDK will not include private attribute values in analytics events, but private attribute names will be sent.
 
-     To set private user attributes for a specific user, see `LDUser.privateAttributes`. (Default: nil)
+     To set private context attributes for a specific context, see `LDContext.privateAttributes`. (Default: nil)
 
-     See Also: `allUserAttributesPrivate` and `LDUser.privateAttributes`.
+     See Also: `allContextAttributesPrivate` and `LDContext.privateAttributes`.
     */
-    public var privateUserAttributes: [UserAttribute] = Defaults.privateUserAttributes
+    public var privateContextAttributes: [Reference] = Defaults.privateContextAttributes
 
     /**
      Directs the SDK to use REPORT for HTTP requests for feature flag data. (Default: `false`)
@@ -296,19 +380,18 @@ public struct LDConfig {
     public var useReport: Bool = Defaults.useReport
     private static let flagRetryStatusCodes = [HTTPURLResponse.StatusCodes.methodNotAllowed, HTTPURLResponse.StatusCodes.badRequest, HTTPURLResponse.StatusCodes.notImplemented]
 
-    /**
-     Controls how the SDK reports the user in analytics event reports. When set to true, event reports will contain the user attributes, except attributes marked as private. When set to false, event reports will contain the user's key only, reducing the size of event reports. (Default: false)
-    */
-    public var inlineUserInEvents: Bool = Defaults.inlineUserInEvents
-
     /// Enables logging for debugging. (Default: false)
     public var isDebugMode: Bool = Defaults.debugMode
-    
+
+    /// Used by the contract tests to override the default 5 minute polling interval. This should never be used outside
+    /// of the contract tests.
+    internal var ignorePollingMinimum: Bool = false
+
     /// Enables requesting evaluation reasons for all flags. (Default: false)
     public var evaluationReasons: Bool = Defaults.evaluationReasons
-    
-    /// An Integer that tells UserEnvironmentFlagCache the maximum number of users to locally cache. Can be set to -1 for unlimited cached users.
-    public var maxCachedUsers: Int = Defaults.maxCachedUsers
+
+    /// An Integer that tells ContextEnvironmentFlagCache the maximum number of contexts to locally cache. Can be set to -1 for unlimited cached contexts.
+    public var maxCachedContexts: Int = Defaults.maxCachedContexts
 
     /**
      Set to true to opt out of sending diagnostic data. (Default: false)
@@ -335,9 +418,21 @@ public struct LDConfig {
     /// Additional headers that should be added to all HTTP requests from SDK components to LaunchDarkly services
     public var additionalHeaders: [String: String] = [:]
 
+    /// Should the event payload sent to LaunchDarkly use gzip compression. By default this is false to prevent backward breaking compatibility issues with older versions of the relay proxy.
+    ///
+    /// Customers not using the relay proxy are strongly encouraged to enable this feature to reduce egress bandwidth cost.
+    public var enableCompression: Bool = Defaults.enableCompression
+
     /* TODO: find a way to make delegates equatable */
     /// a closure to allow dynamic changes of headers on connect & reconnect
     public var headerDelegate: RequestHeaderTransform?
+
+    /// Set to true to opt in to automatically sending mobile environment attributes.  This data makes it simpler to target mobile customers
+    /// based on application name or version, or on device characteristics including manufacturer, model, operating system, locale, and so on.
+    public var autoEnvAttributes: Bool = Defaults.autoEnvAttributes
+
+    /// Configure the logger that will be used by the rest of the SDK.
+    public var logger: OSLog = Defaults.logger
 
     /// LaunchDarkly defined minima for selected configurable items
     public let minima: Minima
@@ -345,10 +440,10 @@ public struct LDConfig {
     /// An NSObject wrapper for the Swift LDConfig struct. Intended for use in mixed apps when Swift code needs to pass a config into an Objective-C method.
     public var objcLdConfig: ObjcLDConfig { ObjcLDConfig(self) }
 
-    let environmentReporter: EnvironmentReporting
-
-    /// should anonymous users automatically be aliased when identifying
-    public var autoAliasingOptOut: Bool = Defaults.autoAliasingOptOut
+    /// Initial set of hooks for the client.
+    ///
+    /// Hooks provide entry points which allow for observation of SDK functions.
+    public var hooks: [Hook] = Defaults.hooks
 
     /// A Dictionary of identifying names to unique mobile keys for all environments
     private var mobileKeys: [String: String] {
@@ -387,40 +482,52 @@ public struct LDConfig {
     public func getSecondaryMobileKeys() -> [String: String] {
         return _secondaryMobileKeys
     }
-    
+
     /// Internal variable for secondaryMobileKeys computed property
     private var _secondaryMobileKeys: [String: String]
-    
+
     // Internal constructor to enable automated testing
-    init(mobileKey: String, environmentReporter: EnvironmentReporting) {
+    init(mobileKey: String, autoEnvAttributes: AutoEnvAttributes, isDebugBuild: Bool) {
         self.mobileKey = mobileKey
-        self.environmentReporter = environmentReporter
-        minima = Minima(environmentReporter: environmentReporter)
-        allowStreamingMode = environmentReporter.operatingSystem.isStreamingEnabled
-        allowBackgroundUpdates = environmentReporter.operatingSystem.isBackgroundEnabled
+        self.autoEnvAttributes = (autoEnvAttributes == .enabled) // mapping API enum to bool
+        minima = Minima(isDebugBuild: isDebugBuild)
+        allowStreamingMode = SystemCapabilities.operatingSystem.isStreamingEnabled
+        allowBackgroundUpdates = SystemCapabilities.operatingSystem.isBackgroundEnabled
         _secondaryMobileKeys = Defaults.secondaryMobileKeys
         if mobileKey.isEmpty {
-            Log.debug(typeName(and: #function, appending: ": ") + "mobileKey is empty. The SDK will not operate correctly without a valid mobile key.")
+            os_log("%s mobileKey is empty. The SDK will not operate correctly without a valid mobile key.", log: logger, type: .debug, typeName(and: #function))
         }
     }
 
-    /// LDConfig constructor. Configurable values are all set to their default values. The client app can modify these values as desired. Note that client app developers may prefer to get the LDConfig from `LDClient.config` in order to retain previously set values.
-    public init(mobileKey: String) {
-        self.init(mobileKey: mobileKey, environmentReporter: EnvironmentReporter())
+    /**
+     LDConfig constructor. Configurable values are all set to their default values. The client app can modify these values as desired.
+     Note that client app developers may prefer to get the LDConfig from `LDClient.config` in order to retain previously set values.
+
+     - Parameters:
+     - mobileKey: The mobile key for the LaunchDarkly environment. This can be found on the LaunchDarkly dashboard once logged in.
+     - autoEnvAttributes: Enable / disable Auto Environment Attributes functionality. When enabled, the SDK will automatically
+     provide data about the mobile environment where the application is running. This data makes it simpler to target
+     your mobile customers based on application name or version, or on device characteristics including manufacturer,
+     model, operating system, locale, and so on. We recommend enabling this when you configure the SDK. To learn more,
+     read [Automatic environment attributes](https://docs.launchdarkly.com/sdk/features/environment-attributes).
+     for more documentation.
+     */
+    public init(mobileKey: String, autoEnvAttributes: AutoEnvAttributes) {
+        self.init(mobileKey: mobileKey, autoEnvAttributes: autoEnvAttributes, isDebugBuild: false)
     }
 
     // Determine the effective flag polling interval based on runMode, configured foreground & background polling interval, and minimum foreground & background polling interval.
     func flagPollingInterval(runMode: LDClientRunMode) -> TimeInterval {
-        let pollingInterval = runMode == .foreground ? max(flagPollingInterval, minima.flagPollingInterval) : max(backgroundFlagPollingInterval, minima.backgroundFlagPollingInterval)
-        Log.debug(typeName(and: #function, appending: ": ") + "\(pollingInterval)")
-        return pollingInterval
+        if ignorePollingMinimum {
+            return runMode == .foreground ? flagPollingInterval : backgroundFlagPollingInterval
+        }
+
+        return runMode == .foreground ? max(flagPollingInterval, minima.flagPollingInterval) : max(backgroundFlagPollingInterval, minima.backgroundFlagPollingInterval)
     }
 
     // Determines if the status code is a code that should cause the SDK to retry a failed HTTP Request that used the REPORT method. Retried requests will use the GET method.
     static func isReportRetryStatusCode(_ statusCode: Int) -> Bool {
-        let isRetryStatusCode = LDConfig.flagRetryStatusCodes.contains(statusCode)
-        Log.debug(LDConfig.typeName(and: #function, appending: ": ") + "\(isRetryStatusCode)")
-        return isRetryStatusCode
+        return LDConfig.flagRetryStatusCodes.contains(statusCode)
     }
 }
 
@@ -432,6 +539,7 @@ extension LDConfig: Equatable {
             && lhs.eventsUrl == rhs.eventsUrl
             && lhs.streamUrl == rhs.streamUrl
             && lhs.eventCapacity == rhs.eventCapacity
+            && lhs.sendEvents == rhs.sendEvents
             && lhs.connectionTimeout == rhs.connectionTimeout
             && lhs.eventFlushInterval == rhs.eventFlushInterval
             && lhs.flagPollingInterval == rhs.flagPollingInterval
@@ -440,19 +548,18 @@ extension LDConfig: Equatable {
             && lhs.streamingMode == rhs.streamingMode
             && lhs.enableBackgroundUpdates == rhs.enableBackgroundUpdates
             && lhs.startOnline == rhs.startOnline
-            && lhs.allUserAttributesPrivate == rhs.allUserAttributesPrivate
-            && Set(lhs.privateUserAttributes) == Set(rhs.privateUserAttributes)
+            && lhs.allContextAttributesPrivate == rhs.allContextAttributesPrivate
+            && Set(lhs.privateContextAttributes) == Set(rhs.privateContextAttributes)
             && lhs.useReport == rhs.useReport
-            && lhs.inlineUserInEvents == rhs.inlineUserInEvents
             && lhs.isDebugMode == rhs.isDebugMode
             && lhs.evaluationReasons == rhs.evaluationReasons
-            && lhs.maxCachedUsers == rhs.maxCachedUsers
+            && lhs.maxCachedContexts == rhs.maxCachedContexts
             && lhs.diagnosticOptOut == rhs.diagnosticOptOut
             && lhs.diagnosticRecordingInterval == rhs.diagnosticRecordingInterval
             && lhs.wrapperName == rhs.wrapperName
             && lhs.wrapperVersion == rhs.wrapperVersion
             && lhs.additionalHeaders == rhs.additionalHeaders
-            && lhs.autoAliasingOptOut == rhs.autoAliasingOptOut
+            && lhs.autoEnvAttributes == rhs.autoEnvAttributes
     }
 }
 

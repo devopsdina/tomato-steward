@@ -27,14 +27,14 @@ final class CalculatorViewModel: ObservableObject {
         // Units preference
         useCelsius = settingsStore.preferredUnitsIsCelsius()
 
-        // Observe flags
-        ldService.$flags
+        // Observe default units flag
+        ldService.$defaultCelsius
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] flags in
+            .sink { [weak self] defaultCelsius in
                 guard let self = self else { return }
                 // Default units flag only influences initial preference if not set by user
                 if self.plan == nil {
-                    self.useCelsius = flags.defaultCelsius
+                    self.useCelsius = defaultCelsius
                 }
             }
             .store(in: &cancellables)
@@ -57,12 +57,11 @@ final class CalculatorViewModel: ObservableObject {
         }
         validationMessage = nil
 
-        let model: ReductionModel = ldService.flags.algoReductionModel == "v2" ? .v2 : .v1
-        let includeTips = ldService.flags.showAdvancedTips
+        let model: ReductionModel = ldService.algoReductionModel == "v2" ? .v2 : .v1
+        let includeTips = ldService.showAdvancedTips
         let result = StewCalculator.computePlan(inputs: inputs, model: model, includeAdvancedTips: includeTips)
         plan = result
         settingsStore.saveLastInputs(inputs)
-        print("🧮 Plan computed: minutes=\(result.totalMinutes), temp=\(useCelsius ? result.celsiusText : result.fahrenheitText)")
     }
 
     func clearPlan() {

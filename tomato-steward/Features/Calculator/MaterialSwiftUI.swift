@@ -11,11 +11,11 @@ struct MDCTextFieldView: UIViewRepresentable {
         }
         func textFieldDidBeginEditing(_ textField: UITextField) {
             parent.onBeginEditing?()
-            print("🧷 MDCTextField begin editing (isFirstResponder=\(textField.isFirstResponder))")
+
         }
         func textFieldDidEndEditing(_ textField: UITextField) {
             parent.onEndEditing?()
-            print("🧷 MDCTextField end editing")
+
         }
         func textFieldDidChangeSelection(_ textField: UITextField) {
             let newText = textField.text ?? ""
@@ -24,7 +24,7 @@ struct MDCTextFieldView: UIViewRepresentable {
                 guard let self = self else { return }
                 if self.parent.text != newText {
                     self.parent.text = newText
-                    print("🧷 MDCTextField changed → \(newText)")
+
                 }
             }
         }
@@ -59,7 +59,7 @@ struct MDCTextFieldView: UIViewRepresentable {
         // Rely on SwiftUI's .toolbar(placement: .keyboard) Done button.
         // Custom UIToolbar here can trigger width=0 constraint warnings inside SwiftUI hosting.
         textField.inputAccessoryView = nil
-        print("🧷 MDCTextField makeUIView")
+
         return textField
     }
 
@@ -73,7 +73,7 @@ struct MDCTextFieldView: UIViewRepresentable {
         // Layout guards to avoid NaN sizes
         if !uiView.bounds.width.isFinite || !uiView.bounds.height.isFinite {
             uiView.bounds.size = CGSize(width: 180, height: 56)
-            print("🧷 MDCTextField bounds corrected to finite size")
+
         }
     }
 }

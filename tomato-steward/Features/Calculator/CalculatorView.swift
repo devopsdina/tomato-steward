@@ -8,6 +8,7 @@ import MaterialComponents
 
 struct CalculatorView: View {
     @ObservedObject var viewModel: CalculatorViewModel
+    @ObservedObject private var launchDarklyService = LaunchDarklyService.shared
     @FocusState private var weightFieldFocused: Bool
     @State private var isKeyboardVisible: Bool = false
     @State private var showCustomPad: Bool = false
@@ -39,58 +40,23 @@ struct CalculatorView: View {
 					}
 					.padding()
 				}
-				// Bottom content: show custom pad if requested, else show Quit when keyboard not visible
+				// Bottom content: show custom pad if requested
 				Group {
 					if showCustomPad {
 						numberPad()
 							.frame(maxWidth: .infinity)
 							.ignoresSafeArea(edges: .bottom)
-					} else if !isKeyboardVisible {
-						HStack { Spacer(); quitButtonSmall(); Spacer() }
-							.padding([.horizontal, .bottom])
 					}
 				}
 			}
 			.navigationBarTitleDisplayMode(.inline)
-			.toolbar {
-				ToolbarItem(placement: .principal) {
-					HStack(spacing: 8) {
-						Text("🍅")
-						Text("Tomato Steward")
-							.font(.system(size: 24, weight: .heavy))
-							.foregroundColor(.white)
-						Text("🍅")
-					}
-				}
-				ToolbarItemGroup(placement: .navigationBarTrailing) {
-					if LaunchDarklyService.shared.flags.showThemeToggle {
-						Menu {
-							Button("Light") { UIApplication.shared.windows.first?.overrideUserInterfaceStyle = .light }
-							Button("Dark") { UIApplication.shared.windows.first?.overrideUserInterfaceStyle = .dark }
-							Button("System") { UIApplication.shared.windows.first?.overrideUserInterfaceStyle = .unspecified }
-						} label: {
-							Image(systemName: "circle.lefthalf.filled")
-						}
-						.accessibilityLabel("Theme")
-					}
-				}
-			}
+			.toolbar(content: navigationToolbarContent)
+			.toolbar(content: keyboardToolbarContent)
+			.toolbar(content: bottomToolbarContent)
 			.modifier(NavBarBackgroundCompat())
 			.accentColor(Brand.primary)
-			.toolbar {
-				ToolbarItemGroup(placement: .keyboard) {
-					Spacer()
-					Button(action: {
-						weightFieldFocused = false
-						UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-					}) {
-						Text("Done")
-							.bold()
-					}
-					.buttonStyle(.borderedProminent)
-					.tint(Brand.primary)
-				}
-			}
+			.toolbarBackground(.visible, for: .bottomBar)
+			.toolbarBackground(Color(UIColor.systemGray6), for: .bottomBar)
 			.background(KeyboardDismissBackground(isActive: isKeyboardVisible || showCustomPad))
 			.onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
 				isKeyboardVisible = true
@@ -262,14 +228,13 @@ struct CalculatorView: View {
         weightFieldFocused = false
         showCustomPad = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-		print("🧮 Compute tapped → dismissing inputs; weightText=\(viewModel.weightText)")
         // Then compute
         viewModel.computePlan()
     }
 
     private func unitsToggle() -> some View {
         Group {
-            if LaunchDarklyService.shared.flags.showUnitsToggle {
+            if launchDarklyService.showUnitsToggle {
                 Toggle(isOn: Binding(get: { viewModel.useCelsius }, set: { _ in viewModel.toggleUnits() })) {
                     Text("Use Celsius")
                         .font(.title3)
@@ -328,37 +293,62 @@ struct CalculatorView: View {
 		print("⌨️ Key tapped=\(key) → weightText=\(viewModel.weightText)")
     }
 
-    private func quitButton() -> some View {
-        #if canImport(MaterialComponents)
-        MDCButtonView(title: "Quit", action: {
-            UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                exit(0)
-            }
-        })
-        .frame(maxWidth: .infinity, minHeight: 44)
-        .foregroundColor(.white)
-        #else
-        Button("Quit") {
-            UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                exit(0)
+    @ToolbarContentBuilder
+    private func navigationToolbarContent() -> some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            HStack(spacing: 8) {
+                Text("🍅")
+                Text("Tomato Steward")
+                    .font(.system(size: 24, weight: .heavy))
+                    .foregroundColor(.white)
+                Text("🍅")
             }
         }
-        .buttonStyle(.borderedProminent)
-        .tint(Brand.danger)
-        .frame(maxWidth: .infinity)
-        #endif
+        
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
+            if launchDarklyService.isDarkMode {
+                Menu {
+                    Button("Light Mode") { Brand.enableLightMode() }
+                    Button("Dark Mode") { Brand.enableDarkMode() }
+                    Button("System Default") { Brand.useSystemTheme() }
+                } label: {
+                    Image(systemName: "circle.lefthalf.filled")
+                        .foregroundColor(.white)
+                }
+                .accessibilityLabel("Theme Options - Currently in Dark Mode via ui.DarkMode Flag")
+            }
+        }
     }
-
-    private func quitButtonSmall() -> some View {
-        Button("Quit") {
-            UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { exit(0) }
+    
+    @ToolbarContentBuilder
+    private func keyboardToolbarContent() -> some ToolbarContent {
+        ToolbarItemGroup(placement: .keyboard) {
+            Spacer()
+            Button(action: {
+                weightFieldFocused = false
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }) {
+                Text("Done")
+                    .bold()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Brand.primary)
         }
-        .buttonStyle(.bordered)
-        .tint(Brand.danger)
-        .frame(width: 140)
+    }
+    
+    @ToolbarContentBuilder
+    private func bottomToolbarContent() -> some ToolbarContent {
+        ToolbarItem(placement: .bottomBar) {
+            Button("Quit") {
+                UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    exit(0)
+                }
+            }
+            .buttonStyle(.bordered)
+            .tint(Brand.danger)
+            .frame(width: 140)
+        }
     }
 
     private func resultsCard(plan: StewPlan) -> some View {
