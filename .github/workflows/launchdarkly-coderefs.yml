@@ -13,9 +13,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 11
 
       - name: Find LaunchDarkly code references
         uses: launchdarkly/find-code-references@v2.14.0
         with:
           accessToken: ${{ secrets.LAUNCHDARKLY_CODEREFS_SECRET }}
           projKey: LD_PROJECT_KEY
+          contextLines: 6
+          debug: true
