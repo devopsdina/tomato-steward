@@ -1,0 +1,25 @@
+name: Find LaunchDarkly code references
+on: [workflow_dispatch, pull_request, push]
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launchdarkly-coderefs:
+    name: LaunchDarkly Code References
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 11
+
+      - name: Find LaunchDarkly code references
+        uses: launchdarkly/find-code-references@v2.14.0
+        with:
+          accessToken: ${{ secrets.LAUNCHDARKLY_CODEREFS_SECRET }}
+          projKey: ${{ vars.LD_PROJECT_KEY }}
+          contextLines: 5
+          debug: true
