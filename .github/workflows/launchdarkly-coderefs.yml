@@ -17,5 +17,5 @@ jobs:
       - name: Find LaunchDarkly code references
         uses: launchdarkly/find-code-references@v2.14.0
         with:
-          access-token: ${{ secrets.LAUNCHDARKLY_CODEREFS_SECRET }}
+          accessToken: ${{ secrets.LAUNCHDARKLY_CODEREFS_SECRET }}
           projKey: LD_PROJECT_KEY
