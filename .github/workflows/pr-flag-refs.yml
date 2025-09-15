@@ -27,18 +27,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           
-      - name: Remove label if present
+      - name: Remove label (ignore if missing)
         if: steps.find-flags.outputs.any-changed == 'false'
-        run: |
-          set -o pipefail
-          LABEL="ld-flags"
-          # Get label names as newline-separated list; remove only if present
-          if gh pr view "$PR_NUMBER" --json labels -q '.labels[].name' | grep -qx "$LABEL"; then
-            gh pr edit "$PR_NUMBER" --remove-label "$LABEL"
-            echo "Removed label '$LABEL'."
-          else
-            echo "Label '$LABEL' not present; skipping removal."
-          fi
+        run: gh pr edit "$PR_NUMBER" --remove-label ld-flags || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
