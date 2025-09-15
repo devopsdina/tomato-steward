@@ -48,20 +48,6 @@ final class LaunchDarklyService: ObservableObject {
         }
     }
     
-    private func updateShowAdvancedTips(flagKey: String, value: Bool, isChange: Bool = false) {
-        if isChange { print("! 💡 [LaunchDarkly] \(flagKey) changed to: \(value)") }
-        
-        // Handle on/off states
-        if value {
-            print("🔛 [LaunchDarkly] Advanced tips enabled - showing detailed cooking guidance")
-        } else {
-            print("🔴 [LaunchDarkly] Advanced tips disabled - showing basic guidance only")
-        }
-        
-        DispatchQueue.main.async {
-            self.showAdvancedTips = value
-        }
-    }
     
     private func updateEnableLogin(flagKey: String, value: Bool, isChange: Bool = false) {
         if isChange { print("! 🔐 [LaunchDarkly] \(flagKey) changed to: \(value)") }
@@ -178,16 +164,7 @@ final class LaunchDarklyService: ObservableObject {
         }
         let currentAlgo = client.stringVariation(forKey: "algo.reductionModel", defaultValue: "v1")
         updateAlgoReductionModel(flagKey: "algo.reductionModel", value: currentAlgo)
-        
-        // Direct observation for ui.showAdvancedTips
-        client.observe(key: "ui.showAdvancedTips", owner: self) { [weak self] changedFlag in
-            guard let me = self else { return }
-            guard case .bool(let value) = changedFlag.newValue else { return }
-            me.updateShowAdvancedTips(flagKey: changedFlag.key, value: value, isChange: true)
-        }
-        let currentAdvancedTips = client.boolVariation(forKey: "ui.showAdvancedTips", defaultValue: false)
-        updateShowAdvancedTips(flagKey: "ui.showAdvancedTips", value: currentAdvancedTips)
-        
+                
         // Direct observation for ui.enableLogin
         client.observe(key: "ui.enableLogin", owner: self) { [weak self] changedFlag in
             guard let me = self else { return }
