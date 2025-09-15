@@ -20,6 +20,6 @@ jobs:
         uses: launchdarkly/find-code-references@v2.14.0
         with:
           accessToken: ${{ secrets.LAUNCHDARKLY_CODEREFS_SECRET }}
-          projKey: LD_PROJECT_KEY
+          projKey: ${{ vars.LD_PROJECT_KEY }}
           contextLines: 5
           debug: true
