@@ -28,7 +28,12 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
       - name: Remove label
         if: steps.find-flags.outputs.any-changed == 'false'
-        run: gh pr edit $PR_NUMBER --remove-label ld-flags
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          LABEL="ld-flags"
+          # list labels, check for exact match, remove only if present
+          if gh pr view "$PR_NUMBER" --json labels -q '.labels[].name' | grep -qx "$LABEL"; then
+            gh pr edit "$PR_NUMBER" --remove-label "$LABEL"
+            echo "Removed label '$LABEL'."
+          else
+            echo "Label '$LABEL' not present; skipping removal."
+          fi
